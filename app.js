@@ -170,11 +170,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Receiver Listen (Mic)
   listenBtn.addEventListener('click', async () => {
+    listenBtn.disabled = true;
+    listenBtn.innerHTML = `<span>&bull; INITIALIZING...</span>`;
     await engine.startListening();
     if (engine.audioCtx) {
       sampleRateDisplay.textContent = `${(engine.audioCtx.sampleRate / 1000).toFixed(1)} kHz`;
     }
-    listenBtn.disabled = true;
+    listenBtn.innerHTML = `<span>&bull; LISTENING (ACTIVE)</span>`;
     stopListenBtn.disabled = false;
     rxStateLabel.textContent = 'ACTIVE';
     rxStateLabel.style.color = 'var(--color-green)';
@@ -183,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
   stopListenBtn.addEventListener('click', () => {
     engine.stopListening();
     listenBtn.disabled = false;
+    listenBtn.innerHTML = `<span>&bull; START LISTENER (MIC)</span>`;
     stopListenBtn.disabled = true;
     rxStateLabel.textContent = 'STANDBY';
     rxStateLabel.style.color = 'var(--text-muted)';

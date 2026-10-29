@@ -4,6 +4,12 @@
  * Created by Shubham
  */
 
+function convertTypedArray(src, type) {
+  const buffer = new ArrayBuffer(src.byteLength);
+  new src.constructor(buffer).set(src);
+  return new type(buffer);
+}
+
 class AVSyncAudioEngine {
   constructor() {
     this.audioCtx = null;
@@ -11,7 +17,6 @@ class AVSyncAudioEngine {
     this.micStream = null;
     this.micSource = null;
     this.scriptProcessor = null;
-    this.silentSink = null;
     this.loopbackGain = null;
     this.masterGain = null;
     this.activeSource = null;
@@ -20,11 +25,12 @@ class AVSyncAudioEngine {
     this.ggwave = null;
     this.instance = null;
     this.isInitializing = false;
+    this.isReady = false;
 
     // Profile & Speed settings
     this.profileType = 'audible'; // 'audible' | 'ultrasonic'
     this.speedType = 'fast';       // 'normal' | 'fast' | 'fastest' | 'dt'
-    this.volume = 0.8;
+    this.volume = 0.85;
     this.isLoopback = false;
 
     // Display metadata
@@ -46,6 +52,24 @@ class AVSyncAudioEngine {
     this.onDataReceived = null;
     this.onTelemetryUpdate = null;
     this.onPreambleLocked = null;
+
+    // Pre-initialize WASM engine in background
+    this.preheatEngine();
+  }
+
+  async preheatEngine() {
+    if (this.ggwave || this.isInitializing) return;
+    this.isInitializing = true;
+    try {
+      if (typeof window.ggwave_factory === 'function') {
+        this.ggwave = await window.ggwave_factory();
+        this.isReady = true;
+      }
+    } catch (e) {
+      console.warn('Background ggwave preload pending user gesture:', e);
+    } finally {
+      this.isInitializing = false;
+    }
   }
 
   async initAudioContext() {
@@ -53,7 +77,7 @@ class AVSyncAudioEngine {
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       this.audioCtx = new AudioCtxClass();
 
-      // Output bus
+      // Master output volume bus
       this.masterGain = this.audioCtx.createGain();
       this.masterGain.gain.setValueAtTime(this.volume, this.audioCtx.currentTime);
       this.masterGain.connect(this.audioCtx.destination);
@@ -62,15 +86,10 @@ class AVSyncAudioEngine {
       this.loopbackGain = this.audioCtx.createGain();
       this.loopbackGain.gain.setValueAtTime(this.isLoopback ? 1.0 : 0.0, this.audioCtx.currentTime);
 
-      // Analyser for 60fps Canvas spectrum display
+      // Analyser for real-time 60fps Canvas spectrum display
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 2048;
       this.analyser.smoothingTimeConstant = 0.08;
-
-      // Silent sink prevents GC of scriptProcessor
-      this.silentSink = this.audioCtx.createGain();
-      this.silentSink.gain.setValueAtTime(0.0, this.audioCtx.currentTime);
-      this.silentSink.connect(this.audioCtx.destination);
 
       this.loopbackGain.connect(this.analyser);
     }
@@ -79,31 +98,28 @@ class AVSyncAudioEngine {
       await this.audioCtx.resume();
     }
 
-    // Initialize ggwave WASM engine
-    if (!this.ggwave && !this.isInitializing) {
-      this.isInitializing = true;
-      try {
-        if (typeof window.ggwave_factory === 'function') {
-          this.ggwave = await window.ggwave_factory();
-          const parameters = this.ggwave.getDefaultParameters();
-          parameters.sampleRateInp = this.audioCtx.sampleRate;
-          parameters.sampleRateOut = this.audioCtx.sampleRate;
-          parameters.sampleFormatInp = this.ggwave.SampleFormat.GGWAVE_SAMPLE_FORMAT_F32;
-          parameters.sampleFormatOut = this.ggwave.SampleFormat.GGWAVE_SAMPLE_FORMAT_F32;
-          this.instance = this.ggwave.init(parameters);
-        }
-      } catch (err) {
-        console.error('Failed to initialize ggwave engine', err);
-      } finally {
-        this.isInitializing = false;
+    // Initialize ggwave instance tuned to audio context sample rate
+    if (!this.ggwave) {
+      if (typeof window.ggwave_factory === 'function') {
+        this.ggwave = await window.ggwave_factory();
       }
+    }
+
+    if (this.ggwave && !this.instance) {
+      const parameters = this.ggwave.getDefaultParameters();
+      parameters.sampleRateInp = this.audioCtx.sampleRate;
+      parameters.sampleRateOut = this.audioCtx.sampleRate;
+      parameters.sampleFormatInp = this.ggwave.SampleFormat.GGWAVE_SAMPLE_FORMAT_F32;
+      parameters.sampleFormatOut = this.ggwave.SampleFormat.GGWAVE_SAMPLE_FORMAT_F32;
+      this.instance = this.ggwave.init(parameters);
+      this.isReady = true;
     }
 
     return this.audioCtx;
   }
 
   getProtocolId() {
-    if (!this.ggwave) return 1; // Default fallback ID
+    if (!this.ggwave) return 1;
 
     const p = this.ggwave.ProtocolId;
     if (this.profileType === 'ultrasonic') {
@@ -165,7 +181,6 @@ class AVSyncAudioEngine {
     const bytes = encoder.encode(text || '');
     const byteCount = bytes.length;
 
-    // Estimate transmission duration based on protocol
     const durationPerByte = this.speedType === 'normal' ? 0.14 : this.speedType === 'fastest' ? 0.05 : 0.09;
     const estSec = Math.max(0.6, 0.4 + byteCount * durationPerByte);
 
@@ -185,38 +200,29 @@ class AVSyncAudioEngine {
       this.abortTransmission();
     }
 
-    if (!this.ggwave || !this.instance) {
-      console.warn('Engine not ready yet. Retrying initialization...');
-      await this.initAudioContext();
-    }
-
     this.isTransmitting = true;
     const protocolId = this.getProtocolId();
-    const volInt = Math.max(5, Math.min(100, Math.round(this.volume * 50)));
+    const volInt = Math.max(10, Math.min(100, Math.round(this.volume * 35)));
 
     // Generate waveform through ggwave engine
-    const waveformBytes = this.ggwave.encode(this.instance, text, protocolId, volInt);
-    if (!waveformBytes || waveformBytes.length === 0) {
+    const waveform = this.ggwave.encode(this.instance, text, protocolId, volInt);
+    if (!waveform || waveform.length === 0) {
       this.isTransmitting = false;
       return null;
     }
 
-    const floatSamples = new Float32Array(
-      waveformBytes.buffer,
-      waveformBytes.byteOffset,
-      waveformBytes.length / 4
-    );
-
+    // Convert raw waveform bytes to Float32Array
+    const buf = convertTypedArray(waveform, Float32Array);
     const sampleRate = this.audioCtx.sampleRate;
-    const durationSec = floatSamples.length / sampleRate;
+    const durationSec = buf.length / sampleRate;
 
     if (this.onStatusChange) {
       this.onStatusChange({ state: 'TRANSMITTING', duration: durationSec * 1000 });
     }
 
-    // Create and populate Web Audio buffer
-    const audioBuffer = this.audioCtx.createBuffer(1, floatSamples.length, sampleRate);
-    audioBuffer.getChannelData(0).set(floatSamples);
+    // Create and play Web Audio buffer
+    const audioBuffer = this.audioCtx.createBuffer(1, buf.length, sampleRate);
+    audioBuffer.getChannelData(0).set(buf);
 
     const source = this.audioCtx.createBufferSource();
     source.buffer = audioBuffer;
@@ -233,9 +239,9 @@ class AVSyncAudioEngine {
     if (onProgress) {
       onProgress({
         currentIndex: 1,
-        totalTones: floatSamples.length,
+        totalTones: buf.length,
         currentFreq: this.activeProfile.baseFreq,
-        label: `ECC FRAME [${floatSamples.length} samples]`
+        label: `ECC BURST [${buf.length} samples]`
       });
     }
 
@@ -292,12 +298,13 @@ class AVSyncAudioEngine {
     await this.initAudioContext();
 
     if (!this.scriptProcessor) {
-      // 4096 samples provides optimal buffer stability
-      this.scriptProcessor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+      // 1024 samples per frame matching ggwave reference implementation
+      this.scriptProcessor = this.audioCtx.createScriptProcessor(1024, 1, 1);
       this.scriptProcessor.onaudioprocess = (e) => this.handleAudioProcess(e);
 
+      // Connect to destination directly so Chrome NEVER throttles/mutes the audio process
+      this.scriptProcessor.connect(this.audioCtx.destination);
       this.loopbackGain.connect(this.scriptProcessor);
-      this.scriptProcessor.connect(this.silentSink);
     }
 
     if (!this.micStream && !this.isLoopback) {
@@ -349,26 +356,30 @@ class AVSyncAudioEngine {
    * Synchronous audio process callback (runs on Web Audio thread)
    */
   handleAudioProcess(e) {
+    // Silence output to prevent speaker feedback loop while keeping node alive
+    const outputBuffer = e.outputBuffer.getChannelData(0);
+    outputBuffer.fill(0);
+
     if (!this.isListening || !this.ggwave || !this.instance) return;
 
-    const inputData = e.inputBuffer.getChannelData(0);
+    const sourceData = e.inputBuffer.getChannelData(0);
 
     // Compute RMS level and telemetry
     let sumSq = 0;
-    for (let i = 0; i < inputData.length; i++) {
-      sumSq += inputData[i] * inputData[i];
+    for (let i = 0; i < sourceData.length; i++) {
+      sumSq += sourceData[i] * sourceData[i];
     }
-    const rms = Math.sqrt(sumSq / inputData.length);
+    const rms = Math.sqrt(sumSq / sourceData.length);
     const dbLevel = Math.round(20 * Math.log10(Math.max(1e-5, rms)));
 
-    // Carrier presence heuristic
-    const carrierActive = rms > 0.015;
+    // Carrier presence indicator (lights up when acoustic energy enters microphone)
+    const carrierActive = rms > 0.012;
     if (carrierActive !== this.carrierLock) {
       this.carrierLock = carrierActive;
       if (this.onPreambleLocked) this.onPreambleLocked(carrierActive);
     }
 
-    if (this.onTelemetryUpdate && Math.random() < 0.25) {
+    if (this.onTelemetryUpdate && Math.random() < 0.3) {
       this.onTelemetryUpdate({
         peakFreq: this.carrierLock ? this.activeProfile.baseFreq : 0,
         signalDb: dbLevel,
@@ -377,9 +388,9 @@ class AVSyncAudioEngine {
       });
     }
 
-    // Feed raw float samples to ggwave demodulator
-    const inputBytes = new Int8Array(inputData.buffer, inputData.byteOffset, inputData.byteLength);
-    const decoded = this.ggwave.decode(this.instance, inputBytes);
+    // Safely cast Float32Array from Web Audio to Int8Array using isolated memory copy
+    const inputChunk = convertTypedArray(new Float32Array(sourceData), Int8Array);
+    const decoded = this.ggwave.decode(this.instance, inputChunk);
 
     if (decoded && decoded.length > 0) {
       try {
