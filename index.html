@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AV-Sync // Acoustic Data Transfer Prototype</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Instrumentation Bar -->
+  <header class="top-bar">
+    <div class="brand-section">
+      <div class="logo-symbol">AV</div>
+      <div class="brand-title">
+        <h1>
+          AV-SYNC
+          <span class="brand-badge">PROTOTYPE v1.0</span>
+        </h1>
+        <span class="brand-subtitle">
+          ACOUSTIC DATA LINK &bull; <span class="creator-tag">CREATED BY SHUBHAM</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="top-telemetry">
+      <div class="status-pill">
+        <span class="led-indicator" id="carrierLed"></span>
+        <span id="carrierStatus">CARRIER: IDLE</span>
+      </div>
+      <div class="status-pill">
+        <span>SAMPLE RATE:</span>
+        <strong id="sampleRateDisplay">44.1 kHz</strong>
+      </div>
+      <button class="btn-ghost" id="openManifestBtn">
+        <span>ANTI-SLOP SPEC</span>
+        <span style="font-size: 10px;">&boxbox;</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dual-Rack Dashboard -->
+  <main class="main-container">
+
+    <!-- LEFT RACK: TRANSMITTER (TX) -->
+    <section class="rack-panel">
+      <div class="rack-header">
+        <div class="rack-title">
+          <span class="rack-index">[TX]</span>
+          <span>Acoustic Modulator</span>
+        </div>
+        <div class="status-pill" style="font-size: 10px; padding: 2px 6px;">
+          <span>STATUS:</span>
+          <span id="txState" style="color: var(--color-amber);">READY</span>
+        </div>
+      </div>
+
+      <div class="rack-body">
+        <!-- Frequency Profile -->
+        <div class="control-group">
+          <div class="control-label">
+            <span>Transmission Band</span>
+            <span class="control-label-hint" id="profileHint">1.3 kHz - 3.0 kHz</span>
+          </div>
+          <div class="segment-bar">
+            <button class="segment-btn active" data-profile="audible" id="profAudibleBtn">
+              Audible Chirp (1.6 kHz)
+            </button>
+            <button class="segment-btn" data-profile="ultrasonic" id="profUltraBtn">
+              Near-Ultrasound (18.1 kHz)
+            </button>
+          </div>
+        </div>
+
+        <!-- Speed Profile -->
+        <div class="control-group">
+          <div class="control-label">
+            <span>Symbol Baud Rate</span>
+            <span class="control-label-hint" id="speedHint">75ms / symbol (~13 baud)</span>
+          </div>
+          <div class="segment-bar">
+            <button class="segment-btn" data-speed="110">Robust (110ms)</button>
+            <button class="segment-btn active" data-speed="75">Standard (75ms)</button>
+            <button class="segment-btn" data-speed="45">Fast (45ms)</button>
+          </div>
+        </div>
+
+        <!-- Payload Input -->
+        <div class="control-group">
+          <div class="control-label">
+            <span>Data Payload (UTF-8)</span>
+            <span class="control-label-hint" id="charCount">12 chars / 12 bytes</span>
+          </div>
+          <textarea class="input-terminal" id="txPayloadInput" placeholder="Enter text, token, or hex payload to transmit...">SYNC_PASS_984</textarea>
+        </div>
+
+        <!-- Quick Presets -->
+        <div class="control-group">
+          <div class="control-label">Quick Test Tokens</div>
+          <div class="preset-chips">
+            <button class="chip-btn" data-token="WIFI:AV-SYNC-NODE;KEY:8829">Wi-Fi Config</button>
+            <button class="chip-btn" data-token="AUTH_TOKEN:0x9F4C2A1E">Auth Token</button>
+            <button class="chip-btn" data-token="LAT:28.61,LON:77.20">GPS Coord</button>
+            <button class="chip-btn" data-token="ACK_HELLO_WORLD">Hello World</button>
+          </div>
+        </div>
+
+        <!-- Live Modulation Telemetry -->
+        <div class="telemetry-grid">
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Payload</span>
+            <span class="telemetry-val" id="txBytesVal">12 B</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Tones</span>
+            <span class="telemetry-val" id="txTonesVal">31</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Duration</span>
+            <span class="telemetry-val" id="txDurationVal">2.35s</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Modulation</span>
+            <span class="telemetry-val">16-FSK</span>
+          </div>
+        </div>
+
+        <!-- Audio Output Level & Loopback -->
+        <div class="inline-controls">
+          <div class="control-group">
+            <div class="control-label">Volume Level (<span id="volLabel">80%</span>)</div>
+            <div class="slider-container">
+              <input type="range" id="volumeSlider" min="0" max="100" value="80">
+            </div>
+          </div>
+          <div class="control-group">
+            <div class="control-label">Internal Loopback</div>
+            <label class="toggle-switch">
+              <span style="font-size: 11px;">Direct Bus Route</span>
+              <input type="checkbox" id="loopbackToggle" style="accent-color: var(--color-amber);">
+            </label>
+          </div>
+        </div>
+
+        <!-- Transmit Action Cluster -->
+        <div class="action-cluster">
+          <button class="btn-primary" id="transmitBtn">
+            <span>&blacktriangleright; TRANSMIT AUDIO</span>
+          </button>
+          <button class="btn-secondary" id="testToneBtn">
+            <span>TEST TONE</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT RACK: RECEIVER (RX) & SPECTRUM ANALYZER -->
+    <section class="rack-panel">
+      <div class="rack-header">
+        <div class="rack-title">
+          <span class="rack-index">[RX]</span>
+          <span>Acoustic Demodulator & Spectrogram</span>
+        </div>
+        <div class="status-pill" style="font-size: 10px; padding: 2px 6px;">
+          <span>MIC:</span>
+          <span id="rxStateLabel" style="color: var(--text-muted);">STANDBY</span>
+        </div>
+      </div>
+
+      <div class="rack-body">
+        <!-- Live FFT Spectrogram & Waterfall Canvas -->
+        <div class="control-group">
+          <div class="control-label">
+            <span>Real-time Spectral Telemetry</span>
+            <span class="control-label-hint">4096-PT FFT &bull; 60 FPS</span>
+          </div>
+          <div class="canvas-wrapper">
+            <canvas id="visualizerCanvas"></canvas>
+            <div class="canvas-overlay-tag" id="canvasBandTag">AUDIBLE BAND (1.3k - 3.0k)</div>
+          </div>
+        </div>
+
+        <!-- Real-Time Acoustic Metrics -->
+        <div class="telemetry-grid">
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Peak Freq</span>
+            <span class="telemetry-val" id="rxPeakFreq">-- Hz</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Energy</span>
+            <span class="telemetry-val" id="rxSignalDb">-- dB</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">Sync Lock</span>
+            <span class="telemetry-val" id="rxLockStatus" style="color: var(--text-muted);">FALSE</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-key">CRC Check</span>
+            <span class="telemetry-val" id="rxCrcStatus">--</span>
+          </div>
+        </div>
+
+        <!-- Microphone Control Buttons -->
+        <div class="action-cluster" style="margin-top: 0;">
+          <button class="btn-primary" id="listenBtn" style="background: var(--color-green); color: #000; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);">
+            <span>&bull; START LISTENER (MIC)</span>
+          </button>
+          <button class="btn-secondary" id="stopListenBtn" disabled>
+            <span>STOP</span>
+          </button>
+        </div>
+
+        <!-- Decoded Output Display -->
+        <div class="rx-terminal">
+          <div class="rx-terminal-header">
+            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">
+              Decoded Inbound Packet
+            </span>
+            <button class="btn-ghost" id="copyRxBtn" style="padding: 2px 8px; font-size: 10px;">
+              COPY
+            </button>
+          </div>
+          <div class="rx-payload-display empty" id="rxPayloadDisplay">
+            Awaiting incoming acoustic frame...
+          </div>
+        </div>
+
+        <!-- History Log Table -->
+        <div class="control-group">
+          <div class="control-label">
+            <span>Transmission Log</span>
+            <button class="btn-ghost" id="clearLogBtn" style="padding: 1px 6px; font-size: 9px;">CLEAR</button>
+          </div>
+          <div style="max-height: 110px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-xs);">
+            <table class="rx-history-table">
+              <thead>
+                <tr>
+                  <th>TIME</th>
+                  <th>PAYLOAD</th>
+                  <th>BYTES</th>
+                  <th>CRC</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody">
+                <tr>
+                  <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 12px;">No frames recorded yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Anti-AI Slop Design Manifest Modal -->
+  <div class="modal-backdrop" id="manifestModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>AV-SYNC // ANTI-AI-SLOP DESIGN SPECIFICATION</h2>
+        <button class="btn-ghost" id="closeManifestBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          <strong>AV-Sync</strong> was built from the ground up to deliberately reject the generic, cookie-cutter aesthetic of automated AI-generated websites (commonly dubbed <em>"AI Slop"</em>).
+        </p>
+
+        <h3>1. The Anatomy of AI Slop in Web Design</h3>
+        <p>
+          Generative models and code scaffolds default to the statistical average of their training data. This leads to instantly recognizable cliches:
+        </p>
+        <ul style="padding-left: 20px; display: flex; flex-direction: column; gap: 6px;">
+          <li><strong>The Purple/Indigo Mesh Trap:</strong> Gratuitous gradients (purple-to-blue) on buttons, headers, and floating radial background blurs.</li>
+          <li><strong>The "Inter / Roboto" Typography Monoculture:</strong> Neutral sans-serif fonts used across every element with no personality or hierarchy.</li>
+          <li><strong>The Formulaic 3-Card Grid:</strong> A centered hero with an empty slogan ("Scale your potential") followed by 3 identical rounded-2xl cards with Lucide icons.</li>
+          <li><strong>Fake Non-Functional Mockups:</strong> Decorative UI elements, static charts, and non-working dummy buttons.</li>
+        </ul>
+
+        <h3>2. Intentional Counter-Measures in AV-Sync</h3>
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Typical AI Slop Cliché</th>
+              <th>AV-Sync Engineered Solution</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Generic purple/indigo radial glows</td>
+              <td>Tactile Dieter Rams/Braun-inspired obsidian palette with physical Signal Amber & Phosphor Green LEDs.</td>
+            </tr>
+            <tr>
+              <td>Homogeneous Inter font everywhere</td>
+              <td>Crisp contrast between Space Grotesk display headers and dense JetBrains Mono telemetry tables.</td>
+            </tr>
+            <tr>
+              <td>Formulaic 3-column marketing cards</td>
+              <td>Asymmetric physical instrumentation rack (Transmitter panel vs. Receiver & Spectrogram).</td>
+            </tr>
+            <tr>
+              <td>Vague corporate platitudes</td>
+              <td>Radical technical specificity: Nyquist limits, symbol baud rates, CRC checksums, and Hz bands.</td>
+            </tr>
+            <tr>
+              <td>Static decorative illustrations</td>
+              <td>Real-time 60 FPS HTML5 Canvas FFT Spectrogram and Oscilloscope processing live audio.</td>
+            </tr>
+            <tr>
+              <td>Faux non-working interface</td>
+              <td>Fully functional MFSK Web Audio acoustic modem that actually transmits and decodes data over sound!</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>3. Credits & Authorship</h3>
+        <p>
+          Conceptualized, engineered, and designed by <strong>Shubham</strong>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimalist Clean Footer -->
+  <footer>
+    <div>
+      <span>AV-SYNC &bull; ACOUSTIC DATA TRANSMISSION PROTOCOL</span>
+    </div>
+    <div>
+      <span>ENGINEERED & CREATED BY <span class="credits-highlight">SHUBHAM</span></span>
+    </div>
+    <div>
+      <a href="DESIGN_RESEARCH.md" target="_blank">RESEARCH NOTES (MD)</a>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="audio-engine.js"></script>
+  <script src="visualizer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
