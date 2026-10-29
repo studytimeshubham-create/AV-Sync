@@ -117,6 +117,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Loopback
   loopbackToggle.addEventListener('change', (e) => {
     engine.setLoopback(e.target.checked);
+    if (e.target.checked) {
+      listenBtn.disabled = true;
+      stopListenBtn.disabled = false;
+      rxStateLabel.textContent = 'ACTIVE (LOOP)';
+      rxStateLabel.style.color = 'var(--color-amber)';
+      if (engine.audioCtx) {
+        sampleRateDisplay.textContent = `${(engine.audioCtx.sampleRate / 1000).toFixed(1)} kHz`;
+      }
+    } else {
+      listenBtn.disabled = false;
+      stopListenBtn.disabled = true;
+      rxStateLabel.textContent = engine.isListening ? 'ACTIVE' : 'STANDBY';
+      rxStateLabel.style.color = engine.isListening ? 'var(--color-green)' : 'var(--text-muted)';
+    }
   });
 
   // Transmit Action

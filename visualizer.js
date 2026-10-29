@@ -115,8 +115,10 @@ class AVSyncVisualizer {
 
     // Draw active frequency highlight band for current profile
     const profile = this.engine.activeProfile;
-    const startX = (profile.pilotFreqA / nyquist) * width;
-    const endX = ((profile.baseFreq + 16 * profile.stepFreq) / nyquist) * width;
+    const bandStart = profile.syncA || profile.pilotFreqA || 1200;
+    const bandEnd = (profile.baseFreq || 1880) + 16 * (profile.stepFreq || 70);
+    const startX = (bandStart / nyquist) * width;
+    const endX = (bandEnd / nyquist) * width;
 
     ctx.fillStyle = this.engine.isTransmitting
       ? 'rgba(245, 158, 11, 0.12)'
@@ -129,7 +131,7 @@ class AVSyncVisualizer {
     ctx.fillStyle = this.engine.isTransmitting ? '#f59e0b' : this.engine.carrierLock ? '#10b981' : '#64748b';
     ctx.font = '9px "JetBrains Mono", monospace';
     ctx.fillText(
-      `BAND [${Math.round(profile.pilotFreqA)}Hz - ${Math.round(profile.baseFreq + 16 * profile.stepFreq)}Hz]`,
+      `BAND [${Math.round(bandStart)}Hz - ${Math.round(bandEnd)}Hz]`,
       Math.max(10, Math.min(width - 150, startX)),
       16
     );
