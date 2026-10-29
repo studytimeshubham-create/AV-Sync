@@ -78,13 +78,14 @@
         <!-- Speed Profile -->
         <div class="control-group">
           <div class="control-label">
-            <span>Symbol Baud Rate</span>
-            <span class="control-label-hint" id="speedHint">75ms / symbol (~13 baud)</span>
+            <span>Transmission Mode</span>
+            <span class="control-label-hint" id="speedHint">Fast (Reed-Solomon ECC)</span>
           </div>
           <div class="segment-bar">
-            <button class="segment-btn" data-speed="110">Robust (110ms)</button>
-            <button class="segment-btn active" data-speed="75">Standard (75ms)</button>
-            <button class="segment-btn" data-speed="45">Fast (45ms)</button>
+            <button class="segment-btn" data-speed="normal">Robust (Normal)</button>
+            <button class="segment-btn active" data-speed="fast">Fast</button>
+            <button class="segment-btn" data-speed="fastest">Turbo</button>
+            <button class="segment-btn" data-speed="dt">Dual-Tone</button>
           </div>
         </div>
 
@@ -124,7 +125,7 @@
           </div>
           <div class="telemetry-cell">
             <span class="telemetry-key">Modulation</span>
-            <span class="telemetry-val">16-FSK</span>
+            <span class="telemetry-val">ECC Multi-Tone</span>
           </div>
         </div>
 
@@ -339,6 +340,7 @@
   </footer>
 
   <!-- Scripts -->
+  <script src="ggwave.min.js"></script>
   <script src="audio-engine.js"></script>
   <script src="visualizer.js"></script>
   <script src="app.js"></script>

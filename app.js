@@ -89,9 +89,16 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       speedBtns.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      const speed = parseInt(btn.getAttribute('data-speed'), 10);
-      engine.setSpeed(speed);
-      speedHint.textContent = `${speed}ms / symbol (~${Math.round(1000 / speed)} baud)`;
+      const speedKey = btn.getAttribute('data-speed');
+      engine.setSpeed(speedKey);
+
+      const labels = {
+        normal: 'Robust (Max ECC Parity)',
+        fast: 'Fast (Balanced Multi-Tone)',
+        fastest: 'Turbo (High Throughput)',
+        dt: 'Dual-Tone (Resonant Acoustic)'
+      };
+      speedHint.textContent = labels[speedKey] || speedKey;
       updateTxTelemetry();
     });
   });
